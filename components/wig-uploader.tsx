@@ -1,0 +1,289 @@
+"use client"
+
+import type React from "react"
+
+import { useState } from "react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Upload, ImageIcon, Loader2, CheckCircle, AlertCircle } from "lucide-react"
+import { uploadToImgBB } from "@/lib/image-upload"
+import { addWigToFirestore } from "@/lib/firestore-operations"
+import { clearWigsCache } from "@/lib/cache-manager"
+import ImageCropper from "./image-cropper"
+
+const categories = [
+  "Long Hair",
+  "Short Hair",
+  "Curly Hair",
+  "Straight Hair",
+  "Wavy Hair",
+  "Bob Cut",
+  "Pixie Cut",
+  "Afro",
+  "Braids",
+  "Ponytail",
+  "Bangs",
+  "Colored Hair",
+  "Natural Hair",
+  "Synthetic Hair",
+]
+
+export default function WigUploader() {
+  const [name, setName] = useState("")
+  const [category, setCategory] = useState("")
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [previewUrl, setPreviewUrl] = useState("")
+  const [croppedImage, setCroppedImage] = useState("")
+  const [showCropper, setShowCropper] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadStatus, setUploadStatus] = useState<"idle" | "success" | "error">("idle")
+  const [errorMessage, setErrorMessage] = useState("")
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      setErrorMessage("Please select a valid image file")
+      setUploadStatus("error")
+      return
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMessage("File size must be less than 10MB")
+      setUploadStatus("error")
+      return
+    }
+
+    setSelectedFile(file)
+    setUploadStatus("idle")
+    setErrorMessage("")
+
+    // Create preview URL
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const result = e.target?.result as string
+      setPreviewUrl(result)
+      setShowCropper(true)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleCropComplete = (croppedImageData: string) => {
+    setCroppedImage(croppedImageData)
+    setShowCropper(false)
+  }
+
+  const handleCropCancel = () => {
+    setShowCropper(false)
+    setSelectedFile(null)
+    setPreviewUrl("")
+    setCroppedImage("")
+  }
+
+  const handleUpload = async () => {
+    if (!name.trim() || !category || !croppedImage) {
+      setErrorMessage("Please fill in all fields and select an image")
+      setUploadStatus("error")
+      return
+    }
+
+    setUploading(true)
+    setUploadStatus("idle")
+    setErrorMessage("")
+
+    try {
+      // Convert base64 to blob
+      const response = await fetch(croppedImage)
+      const blob = await response.blob()
+
+      // Upload to ImgBB
+      const imgbbResult = await uploadToImgBB(blob)
+
+      if (!imgbbResult.success || !imgbbResult.url) {
+        throw new Error(imgbbResult.error || "Failed to upload image to ImgBB")
+      }
+
+      // Save to Firestore
+      const firestoreResult = await addWigToFirestore({
+        name: name.trim(),
+        category,
+        imageUrl: imgbbResult.url,
+        imgbbUrl: imgbbResult.url,
+      })
+
+      if (!firestoreResult.success) {
+        throw new Error(firestoreResult.error || "Failed to save wig to database")
+      }
+
+      // Clear cache to force refresh
+      clearWigsCache()
+
+      // Reset form
+      setName("")
+      setCategory("")
+      setSelectedFile(null)
+      setPreviewUrl("")
+      setCroppedImage("")
+      setUploadStatus("success")
+
+      // Reset success status after 3 seconds
+      setTimeout(() => setUploadStatus("idle"), 3000)
+    } catch (error) {
+      console.error("Upload error:", error)
+      setErrorMessage(error instanceof Error ? error.message : "Upload failed")
+      setUploadStatus("error")
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const resetForm = () => {
+    setName("")
+    setCategory("")
+    setSelectedFile(null)
+    setPreviewUrl("")
+    setCroppedImage("")
+    setUploadStatus("idle")
+    setErrorMessage("")
+  }
+
+  if (showCropper && previewUrl) {
+    return <ImageCropper imageSrc={previewUrl} onCropComplete={handleCropComplete} onCancel={handleCropCancel} />
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Upload className="w-5 h-5" />
+            Upload New Wig
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Wig Name */}
+          <div className="space-y-2">
+            <Label htmlFor="wig-name">Wig Name</Label>
+            <Input
+              id="wig-name"
+              placeholder="Enter wig name (e.g., Long Blonde Wavy)"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={uploading}
+            />
+          </div>
+
+          {/* Category */}
+          <div className="space-y-2">
+            <Label htmlFor="wig-category">Category</Label>
+            <Select value={category} onValueChange={setCategory} disabled={uploading}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a category" />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((cat) => (
+                  <SelectItem key={cat} value={cat}>
+                    {cat}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Image Upload */}
+          <div className="space-y-4">
+            <Label>Wig Image</Label>
+
+            {!croppedImage ? (
+              <div className="border-2 border-dashed border-border rounded-lg p-8 text-center">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  id="image-upload"
+                  disabled={uploading}
+                />
+                <label htmlFor="image-upload" className="cursor-pointer">
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center">
+                      <ImageIcon className="w-8 h-8 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="text-lg font-medium">Click to upload image</p>
+                      <p className="text-sm text-muted-foreground">PNG, JPG up to 10MB</p>
+                    </div>
+                  </div>
+                </label>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="relative">
+                  <img
+                    src={croppedImage || "/placeholder.svg"}
+                    alt="Cropped preview"
+                    className="w-full max-w-md mx-auto rounded-lg"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowCropper(true)}
+                    className="mt-2"
+                    disabled={uploading}
+                  >
+                    Edit Image
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Status Messages */}
+          {uploadStatus === "success" && (
+            <div className="flex items-center gap-2 text-green-600 bg-green-50 p-3 rounded-lg">
+              <CheckCircle className="w-5 h-5" />
+              <span>Wig uploaded successfully!</span>
+            </div>
+          )}
+
+          {uploadStatus === "error" && errorMessage && (
+            <div className="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg">
+              <AlertCircle className="w-5 h-5" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex gap-4">
+            <Button onClick={resetForm} variant="outline" disabled={uploading} className="flex-1 bg-transparent">
+              Reset Form
+            </Button>
+            <Button
+              onClick={handleUpload}
+              disabled={uploading || !name || !category || !croppedImage}
+              className="flex-1"
+            >
+              {uploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload Wig
+                </>
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
