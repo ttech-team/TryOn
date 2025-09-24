@@ -1,5 +1,5 @@
 import { db } from "./firebase"
-import { collection, addDoc, getDocs, query, orderBy, Timestamp } from "firebase/firestore"
+import { collection, addDoc, getDocs, query, orderBy, deleteDoc, doc, Timestamp } from "firebase/firestore"
 
 export interface WigData {
   id?: string
@@ -37,5 +37,15 @@ export const getWigsFromFirestore = async (): Promise<WigData[]> => {
   } catch (error) {
     console.error("Error fetching wigs from Firestore:", error)
     return []
+  }
+}
+
+export const deleteWigFromFirestore = async (wigId: string) => {
+  try {
+    await deleteDoc(doc(db, "wigs", wigId))
+    return { success: true }
+  } catch (error) {
+    console.error("Error deleting wig from Firestore:", error)
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
   }
 }

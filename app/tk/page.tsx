@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Eye, EyeOff, Lock } from "lucide-react"
 import AdminPanel from "@/components/admin-panel"
+import { deleteWigFromFirestore } from "@/lib/firestore-operations"
 
 const ADMIN_PASSWORD = "elixir" // Change this to your desired password
 
@@ -25,6 +26,16 @@ export default function AdminPage() {
     } else {
       setError("Invalid password")
       setPassword("")
+    }
+  }
+
+  const handleDeleteWig = async (wigId: string) => {
+  const result = await deleteWigFromFirestore(wigId)
+    if (result.success) {
+      // Remove from local state or refresh the list
+      console.log("Wig deleted successfully")
+    } else {
+      console.error("Failed to delete wig:", result.error)
     }
   }
 
