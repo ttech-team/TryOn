@@ -32,7 +32,7 @@ import {
 } from "lucide-react"
 import { useTheme } from "next-themes"
 import { CameraCapture } from "@/components/camera-capture"
-import { uploadImageToImgBB, validateImageFile, resizeImage } from "@/lib/image-upload"
+import { validateImageFile, resizeImage, uploadImageToFreeimage } from "@/lib/image-upload"
 import { performHairstyleSwap } from "@/lib/hair-swap"
 
 // Enhanced Progress Modal with better mobile styling
@@ -503,7 +503,7 @@ export default function HomePage() {
     setProcessingError(null)
     setViewMode("upload")
 
-    uploadImageToImgBB(imageData).then((uploadResult) => {
+    uploadImageToFreeimage(imageData).then((uploadResult) => {
       if (uploadResult.success) {
         setSelectedImageUrl(uploadResult.url!)
       }
@@ -540,7 +540,7 @@ export default function HomePage() {
       setSelectedImage(resizedImage)
       addToRecentImages(resizedImage)
 
-      const uploadResult = await uploadImageToImgBB(resizedImage)
+      const uploadResult = await uploadImageToFreeimage(resizedImage)
       if (uploadResult.success && uploadResult.url) {
         setSelectedImageUrl(uploadResult.url)
       } else {
@@ -562,7 +562,7 @@ export default function HomePage() {
 
     try {
       setIsUploading(true)
-      const uploadResult = await uploadImageToImgBB(imageData)
+      const uploadResult = await uploadImageToFreeimage(imageData)
       if (uploadResult.success && uploadResult.url) {
         setSelectedImageUrl(uploadResult.url)
       } else {

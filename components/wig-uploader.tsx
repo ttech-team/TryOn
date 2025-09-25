@@ -9,7 +9,6 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Upload, ImageIcon, Loader2, CheckCircle, AlertCircle } from "lucide-react"
-import { uploadToImgBB } from "@/lib/image-upload"
 import { addWigToFirestore } from "@/lib/firestore-operations"
 import { clearWigsCache } from "@/lib/cache-manager"
 import ImageCropper from "./image-cropper"
@@ -30,6 +29,32 @@ const categories = [
   "Natural Hair",
   "Synthetic Hair",
 ]
+
+// Upload image using your API route
+const uploadImageToApi = async (blob: Blob): Promise<{ success: boolean; url?: string; error?: string }> => {
+  try {
+    const formData = new FormData()
+    formData.append('file', blob)
+
+    const response = await fetch('/api/upload-image', {
+      method: 'PUT',
+      body: formData,
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const result = await response.json()
+    return result
+  } catch (error) {
+    console.error("API upload error:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Network error during upload",
+    }
+  }
+}
 
 export default function WigUploader() {
   const [name, setName] = useState("")
@@ -53,9 +78,9 @@ export default function WigUploader() {
       return
     }
 
-    // Validate file size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      setErrorMessage("File size must be less than 10MB")
+    // Validate file size (max 32MB for freeimage.host)
+    if (file.size > 32 * 1024 * 1024) {
+      setErrorMessage("File size must be less than 32MB")
       setUploadStatus("error")
       return
     }
@@ -102,19 +127,19 @@ export default function WigUploader() {
       const response = await fetch(croppedImage)
       const blob = await response.blob()
 
-      // Upload to ImgBB
-      const imgbbResult = await uploadToImgBB(blob)
+      // Upload to your API route
+      const uploadResult = await uploadImageToApi(blob)
 
-      if (!imgbbResult.success || !imgbbResult.url) {
-        throw new Error(imgbbResult.error || "Failed to upload image to ImgBB")
+      if (!uploadResult.success || !uploadResult.url) {
+        throw new Error(uploadResult.error || "Failed to upload image")
       }
 
       // Save to Firestore
       const firestoreResult = await addWigToFirestore({
         name: name.trim(),
         category,
-        imageUrl: imgbbResult.url,
-        imgbbUrl: imgbbResult.url,
+        imageUrl: uploadResult.url,
+        imgbbUrl: uploadResult.url, // Using the same URL for both fields
       })
 
       if (!firestoreResult.success) {
@@ -217,7 +242,7 @@ export default function WigUploader() {
                     </div>
                     <div>
                       <p className="text-lg font-medium">Click to upload image</p>
-                      <p className="text-sm text-muted-foreground">PNG, JPG up to 10MB</p>
+                      <p className="text-sm text-muted-foreground">PNG, JPG up to 32MB</p>
                     </div>
                   </div>
                 </label>

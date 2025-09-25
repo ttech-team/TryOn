@@ -1,81 +1,90 @@
-// Image upload utilities for ImgBB integration
-
-const IMGBB_API_KEY = "26dd45e122238f3b560c6ee2be20bbea"
-const IMGBB_UPLOAD_URL = "https://api.imgbb.com/1/upload"
-
+// Image upload utilities that use Next.js API routes
 export interface ImageUploadResult {
   success: boolean
   url?: string
+  deleteUrl?: string
+  thumbUrl?: string
   error?: string
 }
 
-export async function uploadImageToImgBB(imageData: string): Promise<ImageUploadResult> {
+// Upload base64 image data via API route
+export async function uploadImageToFreeimage(imageData: string): Promise<ImageUploadResult> {
   try {
-    // Convert data URL to base64 (remove data:image/jpeg;base64, prefix)
-    const base64Data = imageData.split(",")[1]
-
-    const formData = new FormData()
-    formData.append("key", IMGBB_API_KEY)
-    formData.append("image", base64Data)
-    formData.append("expiration", "600") // 10 minutes expiration
-
-    const response = await fetch(IMGBB_UPLOAD_URL, {
-      method: "POST",
-      body: formData,
+    const response = await fetch('/api/upload-image', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        imageData
+      }),
     })
 
-    const result = await response.json()
-
-    if (result.success) {
-      return {
-        success: true,
-        url: result.data.url,
-      }
-    } else {
-      return {
-        success: false,
-        error: result.error?.message || "Upload failed",
-      }
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
     }
+
+    const result = await response.json()
+    return result
   } catch (error) {
-    console.error("ImgBB upload error:", error)
+    console.error("API upload error:", error)
     return {
       success: false,
-      error: "Network error during upload",
+      error: error instanceof Error ? error.message : "Network error during upload",
     }
   }
 }
 
-export async function uploadToImgBB(blob: Blob): Promise<ImageUploadResult> {
+// Upload blob/file via API route
+export async function uploadToFreeimage(blob: Blob): Promise<ImageUploadResult> {
   try {
     const formData = new FormData()
-    formData.append("key", IMGBB_API_KEY)
-    formData.append("image", blob)
-    formData.append("expiration", "600") // 10 minutes expiration
+    formData.append('file', blob)
 
-    const response = await fetch(IMGBB_UPLOAD_URL, {
-      method: "POST",
+    const response = await fetch('/api/upload-image', {
+      method: 'PUT',
       body: formData,
     })
 
-    const result = await response.json()
-
-    if (result.success) {
-      return {
-        success: true,
-        url: result.data.url,
-      }
-    } else {
-      return {
-        success: false,
-        error: result.error?.message || "Upload failed",
-      }
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
     }
+
+    const result = await response.json()
+    return result
   } catch (error) {
-    console.error("ImgBB upload error:", error)
+    console.error("API blob upload error:", error)
     return {
       success: false,
-      error: "Network error during upload",
+      error: error instanceof Error ? error.message : "Network error during upload",
+    }
+  }
+}
+
+// Upload image from URL via API route
+export async function uploadImageUrlToFreeimage(imageUrl: string): Promise<ImageUploadResult> {
+  try {
+    const response = await fetch('/api/upload-image', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        imageUrl
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const result = await response.json()
+    return result
+  } catch (error) {
+    console.error("API URL upload error:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Network error during upload",
     }
   }
 }
@@ -86,10 +95,10 @@ export function validateImageFile(file: File): { valid: boolean; error?: string 
     return { valid: false, error: "Please select an image file" }
   }
 
-  // Check file size (max 10MB)
-  const maxSize = 10 * 1024 * 1024
+  // Check file size (max 32MB for freeimage.host)
+  const maxSize = 32 * 1024 * 1024
   if (file.size > maxSize) {
-    return { valid: false, error: "Image must be smaller than 10MB" }
+    return { valid: false, error: "Image must be smaller than 32MB" }
   }
 
   return { valid: true }
@@ -104,7 +113,7 @@ export function resizeImage(file: File, maxWidth = 1024, maxHeight = 1024, quali
     img.onload = () => {
       // Calculate new dimensions
       let { width, height } = img
-
+      
       if (width > height) {
         if (width > maxWidth) {
           height = (height * maxWidth) / width
@@ -128,5 +137,21 @@ export function resizeImage(file: File, maxWidth = 1024, maxHeight = 1024, quali
 
     img.onerror = () => reject(new Error("Failed to load image"))
     img.src = URL.createObjectURL(file)
+  })
+}
+
+// Helper function to convert File to base64 if needed
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result)
+      } else {
+        reject(new Error('Failed to convert file to base64'))
+      }
+    }
+    reader.onerror = () => reject(new Error('Failed to read file'))
+    reader.readAsDataURL(file)
   })
 }
