@@ -1,21 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { v2 as cloudinary } from 'cloudinary'
 
-const FREEIMAGE_API_KEY = "6d207e02198a847aa98d0a2a901485a5"
-const FREEIMAGE_UPLOAD_URL = "https://freeimage.host/api/1/upload"
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: 'dbungcn6l', // Replace with your cloud name from the dashboard
+  api_key: '979279392393332',
+  api_secret: 'DCAMIeo0jl1ZY01TAWKmgp1bS_E', // You'll need to get this from Cloudinary dashboard
+})
 
-interface FreeImageResponse {
-  status_code: number
-  status_txt: string
-  image?: {
-    url: string
-    delete_url: string
-    thumb?: {
-      url: string
-    }
-  }
-  error?: {
-    message: string
-  }
+interface CloudinaryResponse {
+  success: boolean
+  url?: string
+  deleteUrl?: string
+  thumbUrl?: string
+  error?: string
 }
 
 export async function POST(request: NextRequest) {
@@ -23,23 +21,26 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { imageData, imageUrl, blob } = body
 
-    const formData = new FormData()
-    formData.append("key", FREEIMAGE_API_KEY)
-    formData.append("action", "upload")
-    formData.append("format", "json")
+    let uploadResult
 
     if (imageData) {
       // Handle base64 data
-      const base64Data = imageData.split(",")[1]
-      formData.append("source", base64Data)
+      uploadResult = await cloudinary.uploader.upload(imageData, {
+        resource_type: 'image',
+        folder: 'uploads', // Optional: organize uploads in folders
+      })
     } else if (imageUrl) {
       // Handle URL upload
-      formData.append("source", imageUrl)
+      uploadResult = await cloudinary.uploader.upload(imageUrl, {
+        resource_type: 'image',
+        folder: 'uploads',
+      })
     } else if (blob) {
-      // Handle blob data (convert base64 blob to actual blob)
-      const response = await fetch(blob)
-      const blobData = await response.blob()
-      formData.append("source", blobData)
+      // Handle blob data
+      uploadResult = await cloudinary.uploader.upload(blob, {
+        resource_type: 'image',
+        folder: 'uploads',
+      })
     } else {
       return NextResponse.json(
         { success: false, error: "No image data provided" },
@@ -47,28 +48,26 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const response = await fetch(FREEIMAGE_UPLOAD_URL, {
-      method: "POST",
-      body: formData,
-    })
-
-    const result: FreeImageResponse = await response.json()
-
-    if (result.status_code === 200 && result.image) {
+    if (uploadResult && uploadResult.secure_url) {
       return NextResponse.json({
         success: true,
-        url: result.image.url,
-        deleteUrl: result.image.delete_url,
-        thumbUrl: result.image.thumb?.url,
+        url: uploadResult.secure_url,
+        deleteUrl: `https://api.cloudinary.com/v1_1/${cloudinary.config().cloud_name}/image/destroy/${uploadResult.public_id}`, // For reference, actual deletion needs API call
+        thumbUrl: cloudinary.url(uploadResult.public_id, {
+          width: 200,
+          height: 200,
+          crop: 'fill',
+          format: 'jpg'
+        }),
       })
     } else {
       return NextResponse.json({
         success: false,
-        error: result.error?.message || result.status_txt || "Upload failed",
+        error: "Upload failed - no URL returned",
       })
     }
   } catch (error) {
-    console.error("API upload error:", error)
+    console.error("Cloudinary upload error:", error)
     return NextResponse.json(
       {
         success: false,
@@ -92,34 +91,44 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    const uploadFormData = new FormData()
-    uploadFormData.append("key", FREEIMAGE_API_KEY)
-    uploadFormData.append("action", "upload")
-    uploadFormData.append("source", file)
-    uploadFormData.append("format", "json")
+    // Convert file to buffer for Cloudinary
+    const bytes = await file.arrayBuffer()
+    const buffer = Buffer.from(bytes)
 
-    const response = await fetch(FREEIMAGE_UPLOAD_URL, {
-      method: "POST",
-      body: uploadFormData,
-    })
+    // Upload to Cloudinary using buffer
+    const uploadResult = await new Promise((resolve, reject) => {
+      cloudinary.uploader.upload_stream(
+        {
+          resource_type: 'image',
+          folder: 'uploads',
+        },
+        (error, result) => {
+          if (error) reject(error)
+          else resolve(result)
+        }
+      ).end(buffer)
+    }) as any
 
-    const result: FreeImageResponse = await response.json()
-
-    if (result.status_code === 200 && result.image) {
+    if (uploadResult && uploadResult.secure_url) {
       return NextResponse.json({
         success: true,
-        url: result.image.url,
-        deleteUrl: result.image.delete_url,
-        thumbUrl: result.image.thumb?.url,
+        url: uploadResult.secure_url,
+        deleteUrl: `https://api.cloudinary.com/v1_1/${cloudinary.config().cloud_name}/image/destroy/${uploadResult.public_id}`,
+        thumbUrl: cloudinary.url(uploadResult.public_id, {
+          width: 200,
+          height: 200,
+          crop: 'fill',
+          format: 'jpg'
+        }),
       })
     } else {
       return NextResponse.json({
         success: false,
-        error: result.error?.message || result.status_txt || "Upload failed",
+        error: "Upload failed - no URL returned",
       })
     }
   } catch (error) {
-    console.error("API file upload error:", error)
+    console.error("Cloudinary file upload error:", error)
     return NextResponse.json(
       {
         success: false,

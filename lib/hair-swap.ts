@@ -6,7 +6,6 @@ export interface HairstyleSwapRequest {
   sourceImageUrl: string
   targetImageUrl: string
   disableSafetyChecker?: boolean
-  
 }
 
 export interface HairstyleSwapResult {
@@ -22,6 +21,72 @@ export interface TaskStatus {
   progress: number
   resultUrl?: string
   error?: string
+}
+
+// Enhanced error message mapping
+const getDescriptiveError = (errorCode: string, errorMessage: string): string => {
+  // Handle specific error codes
+  const errorMappings: Record<string, string> = {
+    'HairSwap.Swap.Failed': 'Please try uploading a clearer photo with better lighting where your face is clearly visible.',
+    'Download.Unknown': 'Unable to download the image. Please check your internet connection and try again.',
+    'Upload.Failed': 'Image upload failed. Please check your internet connection and try again.',
+    'InvalidImage': 'This image cannot be processed. Please use a clear photo showing your face.',
+    'FaceNotDetected': 'No face was detected in your photo. Please upload a clear image where your face is clearly visible.',
+    'ImageTooSmall': 'Image resolution is too low. Please upload a higher quality image.',
+    'ImageTooLarge': 'Image file is too large. Please compress your image and try again.',
+    'UnsupportedFormat': 'Image format not supported. Please use JPG, PNG, or WebP format.',
+    'NetworkError': 'Network connection error. Please check your internet and try again.',
+    'ServerError': 'Server temporarily unavailable. Please try again in a few moments.',
+    'SafetyViolation': 'Image content violates safety guidelines. Please use a different photo.',
+    'ProcessingTimeout': 'Processing took too long and timed out. Please try again with a smaller image.',
+  }
+
+  // Check for specific error codes first
+  if (errorMappings[errorCode]) {
+    return errorMappings[errorCode]
+  }
+
+  // Handle message-based errors
+  const lowerMessage = errorMessage.toLowerCase()
+  
+  if (lowerMessage.includes('download') && lowerMessage.includes('failed')) {
+    return 'Unable to process the image. Please check your internet connection and try uploading again.'
+  }
+  
+  if (lowerMessage.includes('face') || lowerMessage.includes('detection')) {
+    return 'No clear face detected. Please upload a photo where your face is well-lit and clearly visible.'
+  }
+  
+  if (lowerMessage.includes('network') || lowerMessage.includes('connection')) {
+    return 'Network connection error. Please check your internet and try again.'
+  }
+  
+  if (lowerMessage.includes('timeout') || lowerMessage.includes('time')) {
+    return 'Processing timed out. Please try again with a smaller, clearer image.'
+  }
+  
+  if (lowerMessage.includes('format') || lowerMessage.includes('invalid')) {
+    return 'Image format issue. Please use a standard JPG or PNG image.'
+  }
+  
+  if (lowerMessage.includes('size') || lowerMessage.includes('large')) {
+    return 'Image is too large or small. Please use a medium-sized, clear photo.'
+  }
+  
+  if (lowerMessage.includes('quality') || lowerMessage.includes('blur')) {
+    return 'Image quality is too low. Please upload a clearer, higher quality photo.'
+  }
+  
+  if (lowerMessage.includes('safety') || lowerMessage.includes('content')) {
+    return 'Image content cannot be processed. Please use a different photo.'
+  }
+  
+  if (lowerMessage === 'fail' || lowerMessage === 'failed' || !errorMessage) {
+    return 'Hairstyle swap failed. Please try uploading a clearer photo with good lighting where your face is clearly visible.'
+  }
+  
+  // Fallback for unknown errors
+  return `Processing failed: ${errorMessage}. Please try uploading a clearer photo or check your internet connection.`
 }
 
 export async function startHairstyleSwap(request: HairstyleSwapRequest): Promise<HairstyleSwapResult> {
@@ -50,15 +115,16 @@ export async function startHairstyleSwap(request: HairstyleSwapRequest): Promise
         taskId: result.result.task_id,
       }
     } else {
+      const errorMessage = result.message?.en || result.message || "Failed to start hairstyle swap task"
       return {
         success: false,
-        error: result.message?.en || "Failed to start hairstyle swap task",
+        error: getDescriptiveError(result.code || 'Unknown', errorMessage),
       }
     }
   } catch (error) {
     return {
       success: false,
-      error: "Network error during hairstyle swap request",
+      error: "Network connection error. Please check your internet and try again.",
     }
   }
 }
@@ -79,6 +145,7 @@ export async function checkTaskStatus(taskId: string): Promise<TaskStatus> {
       let mappedStatus: "pending" | "processing" | "completed" | "failed"
       let progress = 0
       let resultUrl: string | undefined
+      let error: string | undefined
 
       switch (data.status) {
         case "succeeded":
@@ -103,9 +170,12 @@ export async function checkTaskStatus(taskId: string): Promise<TaskStatus> {
         case "cancelled":
           mappedStatus = "failed"
           progress = 0
+          // Enhanced error handling for failed tasks
+          const errorCode = data.error?.code || 'HairSwap.Swap.Failed'
+          const errorMessage = data.error?.message || data.error || 'fail'
+          error = getDescriptiveError(errorCode, errorMessage)
           break
         default:
-          // Log unknown status for debugging
           console.log("Unknown status:", data.status)
           mappedStatus = "pending"
           progress = 5
@@ -115,20 +185,21 @@ export async function checkTaskStatus(taskId: string): Promise<TaskStatus> {
         status: mappedStatus,
         progress,
         resultUrl,
-        error: data.error || undefined,
+        error,
       }
     } else {
+      const errorMessage = result.message || "Failed to check task status"
       return {
         status: "failed",
         progress: 0,
-        error: "Failed to check task status",
+        error: getDescriptiveError(result.code || 'Unknown', errorMessage),
       }
     }
   } catch (error) {
     return {
       status: "failed",
       progress: 0,
-      error: "Network error during status check",
+      error: "Network connection error. Please check your internet and try again.",
     }
   }
 }
@@ -170,7 +241,7 @@ export async function performHairstyleSwap(
           console.log("Task completed but no result URL found")
           resolve({
             success: false,
-            error: "Task completed but no result image was generated",
+            error: "Processing completed but no result image was generated. Please try again.",
           })
         }
       } else if (status.status === "failed") {
@@ -178,17 +249,16 @@ export async function performHairstyleSwap(
         clearInterval(pollInterval)
         resolve({
           success: false,
-          error: status.error || "Hairstyle swap processing failed",
+          error: status.error || getDescriptiveError('HairSwap.Swap.Failed', 'Processing failed'),
         })
       } else if (pollCount >= maxPolls) {
         console.log("Task timed out after maximum polls")
         clearInterval(pollInterval)
         resolve({
           success: false,
-          error: "Hairstyle swap processing timed out",
+          error: "Processing timed out. Please try again with a smaller, clearer image.",
         })
       }
-      // Continue polling for "pending" or "processing" status
     }, 2000)
   })
 }

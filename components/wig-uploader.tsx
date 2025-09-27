@@ -11,7 +11,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Upload, ImageIcon, Loader2, CheckCircle, AlertCircle } from "lucide-react"
 import { addWigToFirestore } from "@/lib/firestore-operations"
 import { clearWigsCache } from "@/lib/cache-manager"
-import ImageCropper from "./image-cropper"
 
 const categories = [
   "Long Hair",
@@ -61,8 +60,6 @@ export default function WigUploader() {
   const [category, setCategory] = useState("")
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState("")
-  const [croppedImage, setCroppedImage] = useState("")
-  const [showCropper, setShowCropper] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadStatus, setUploadStatus] = useState<"idle" | "success" | "error">("idle")
   const [errorMessage, setErrorMessage] = useState("")
@@ -78,7 +75,7 @@ export default function WigUploader() {
       return
     }
 
-    // Validate file size (max 32MB for freeimage.host)
+    // Validate file size (max 32MB for cloudinary)
     if (file.size > 32 * 1024 * 1024) {
       setErrorMessage("File size must be less than 32MB")
       setUploadStatus("error")
@@ -94,25 +91,12 @@ export default function WigUploader() {
     reader.onload = (e) => {
       const result = e.target?.result as string
       setPreviewUrl(result)
-      setShowCropper(true)
     }
     reader.readAsDataURL(file)
   }
 
-  const handleCropComplete = (croppedImageData: string) => {
-    setCroppedImage(croppedImageData)
-    setShowCropper(false)
-  }
-
-  const handleCropCancel = () => {
-    setShowCropper(false)
-    setSelectedFile(null)
-    setPreviewUrl("")
-    setCroppedImage("")
-  }
-
   const handleUpload = async () => {
-    if (!name.trim() || !category || !croppedImage) {
+    if (!name.trim() || !category || !selectedFile) {
       setErrorMessage("Please fill in all fields and select an image")
       setUploadStatus("error")
       return
@@ -123,12 +107,8 @@ export default function WigUploader() {
     setErrorMessage("")
 
     try {
-      // Convert base64 to blob
-      const response = await fetch(croppedImage)
-      const blob = await response.blob()
-
       // Upload to your API route
-      const uploadResult = await uploadImageToApi(blob)
+      const uploadResult = await uploadImageToApi(selectedFile)
 
       if (!uploadResult.success || !uploadResult.url) {
         throw new Error(uploadResult.error || "Failed to upload image")
@@ -154,7 +134,6 @@ export default function WigUploader() {
       setCategory("")
       setSelectedFile(null)
       setPreviewUrl("")
-      setCroppedImage("")
       setUploadStatus("success")
 
       // Reset success status after 3 seconds
@@ -173,13 +152,8 @@ export default function WigUploader() {
     setCategory("")
     setSelectedFile(null)
     setPreviewUrl("")
-    setCroppedImage("")
     setUploadStatus("idle")
     setErrorMessage("")
-  }
-
-  if (showCropper && previewUrl) {
-    return <ImageCropper imageSrc={previewUrl} onCropComplete={handleCropComplete} onCancel={handleCropCancel} />
   }
 
   return (
@@ -225,7 +199,7 @@ export default function WigUploader() {
           <div className="space-y-4">
             <Label>Wig Image</Label>
 
-            {!croppedImage ? (
+            {!selectedFile ? (
               <div className="border-2 border-dashed border-border rounded-lg p-8 text-center">
                 <input
                   type="file"
@@ -251,18 +225,21 @@ export default function WigUploader() {
               <div className="space-y-4">
                 <div className="relative">
                   <img
-                    src={croppedImage || "/placeholder.svg"}
-                    alt="Cropped preview"
+                    src={previewUrl || "/placeholder.svg"}
+                    alt="Selected image preview"
                     className="w-full max-w-md mx-auto rounded-lg"
                   />
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setShowCropper(true)}
+                    onClick={() => {
+                      setSelectedFile(null)
+                      setPreviewUrl("")
+                    }}
                     className="mt-2"
                     disabled={uploading}
                   >
-                    Edit Image
+                    Remove Image
                   </Button>
                 </div>
               </div>
@@ -291,7 +268,7 @@ export default function WigUploader() {
             </Button>
             <Button
               onClick={handleUpload}
-              disabled={uploading || !name || !category || !croppedImage}
+              disabled={uploading || !name || !category || !selectedFile}
               className="flex-1"
             >
               {uploading ? (

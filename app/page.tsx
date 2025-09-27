@@ -29,10 +29,11 @@ import {
   Image as ImageIcon,
   Eye,
   History,
+  Loader2,
 } from "lucide-react"
 import { useTheme } from "next-themes"
 import { CameraCapture } from "@/components/camera-capture"
-import { validateImageFile, resizeImage, uploadImageToFreeimage } from "@/lib/image-upload"
+import { validateImageFile, uploadImageToFreeimage } from "@/lib/image-upload"
 import { performHairstyleSwap } from "@/lib/hair-swap"
 
 // Enhanced Progress Modal with better mobile styling
@@ -386,9 +387,13 @@ export default function HomePage() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [progress, setProgress] = useState(0)
   const [showCamera, setShowCamera] = useState(false)
+  
+  // Enhanced upload state management
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "success" | "failed">("idle")
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [processingError, setProcessingError] = useState<string | null>(null)
-  const [isUploading, setIsUploading] = useState(false)
+  
   const [isMobile, setIsMobile] = useState(false)
   const [showFullscreen, setShowFullscreen] = useState(false)
   const [mounted, setMounted] = useState(false)
@@ -501,12 +506,27 @@ export default function HomePage() {
     setSelectedImageUrl(null)
     setResultImage(null)
     setProcessingError(null)
+    setUploadError(null)
+    setUploadStatus("idle")
     setViewMode("upload")
 
+    // Start upload process for the recent image
+    setUploadStatus("uploading")
+    setIsUploading(true)
+    
     uploadImageToFreeimage(imageData).then((uploadResult) => {
-      if (uploadResult.success) {
-        setSelectedImageUrl(uploadResult.url!)
+      if (uploadResult.success && uploadResult.url) {
+        setSelectedImageUrl(uploadResult.url)
+        setUploadStatus("success")
+      } else {
+        setUploadError(uploadResult.error || "Failed to upload image")
+        setUploadStatus("failed")
       }
+      setIsUploading(false)
+    }).catch((error) => {
+      setUploadError("Network error during upload. Please try again.")
+      setUploadStatus("failed")
+      setIsUploading(false)
     })
   }
 
@@ -516,6 +536,8 @@ export default function HomePage() {
     setSelectedImageUrl(null)
     setSelectedWig(null)
     setProcessingError(null)
+    setUploadError(null)
+    setUploadStatus("idle")
     setViewMode("result")
   }
 
@@ -526,28 +548,40 @@ export default function HomePage() {
     setUploadError(null)
     setResultImage(null)
     setProcessingError(null)
+    setUploadStatus("uploading")
 
     const validation = validateImageFile(file)
     if (!validation.valid) {
       setUploadError(validation.error || "Invalid file")
+      setUploadStatus("failed")
       return
     }
 
     try {
       setIsUploading(true)
-      const maxSize = isMobile ? 800 : 1024
-      const resizedImage = await resizeImage(file, maxSize, maxSize, 0.85)
-      setSelectedImage(resizedImage)
-      addToRecentImages(resizedImage)
+      
+      // Read file as base64
+      const reader = new FileReader()
+      const imageData = await new Promise<string>((resolve) => {
+        reader.onload = (e) => resolve(e.target?.result as string)
+        reader.readAsDataURL(file)
+      })
+      
+      setSelectedImage(imageData)
+      addToRecentImages(imageData)
 
-      const uploadResult = await uploadImageToFreeimage(resizedImage)
+      // Upload to cloud
+      const uploadResult = await uploadImageToFreeimage(imageData)
       if (uploadResult.success && uploadResult.url) {
         setSelectedImageUrl(uploadResult.url)
+        setUploadStatus("success")
       } else {
-        setUploadError(uploadResult.error || "Upload failed")
+        setUploadError(uploadResult.error || "Failed to upload image")
+        setUploadStatus("failed")
       }
     } catch (error) {
-      setUploadError("Failed to process image")
+      setUploadError("Failed to process image. Please try again.")
+      setUploadStatus("failed")
     } finally {
       setIsUploading(false)
     }
@@ -558,6 +592,7 @@ export default function HomePage() {
     setUploadError(null)
     setResultImage(null)
     setProcessingError(null)
+    setUploadStatus("uploading")
     addToRecentImages(imageData)
 
     try {
@@ -565,14 +600,41 @@ export default function HomePage() {
       const uploadResult = await uploadImageToFreeimage(imageData)
       if (uploadResult.success && uploadResult.url) {
         setSelectedImageUrl(uploadResult.url)
+        setUploadStatus("success")
       } else {
-        setUploadError(uploadResult.error || "Upload failed")
+        setUploadError(uploadResult.error || "Failed to upload image")
+        setUploadStatus("failed")
       }
     } catch (error) {
-      setUploadError("Failed to upload image")
+      setUploadError("Network error during upload. Please try again.")
+      setUploadStatus("failed")
     } finally {
       setIsUploading(false)
       setShowCamera(false)
+    }
+  }
+
+  const handleRetryUpload = async () => {
+    if (!selectedImage) return
+    
+    setUploadError(null)
+    setUploadStatus("uploading")
+    setIsUploading(true)
+
+    try {
+      const uploadResult = await uploadImageToFreeimage(selectedImage)
+      if (uploadResult.success && uploadResult.url) {
+        setSelectedImageUrl(uploadResult.url)
+        setUploadStatus("success")
+      } else {
+        setUploadError(uploadResult.error || "Failed to upload image")
+        setUploadStatus("failed")
+      }
+    } catch (error) {
+      setUploadError("Network error during upload. Please try again.")
+      setUploadStatus("failed")
+    } finally {
+      setIsUploading(false)
     }
   }
 
@@ -596,12 +658,11 @@ export default function HomePage() {
     setProcessingError(null)
 
     try {
-      // Updated to use VModel hairstyle swap API
       const result = await performHairstyleSwap(
         {
-          sourceImageUrl: selectedWigData.imageUrl,  // Wig/hairstyle reference image
-          targetImageUrl: selectedImageUrl,          // User's portrait photo
-          disableSafetyChecker: false               // Enable safety checking
+          sourceImageUrl: selectedWigData.imageUrl,
+          targetImageUrl: selectedImageUrl,
+          disableSafetyChecker: false
         },
         (progressValue: any) => setProgress(progressValue),
       )
@@ -621,7 +682,8 @@ export default function HomePage() {
         throw new Error(result.error || "Hairstyle processing failed")
       }
     } catch (error) {
-      setProcessingError(error instanceof Error ? error.message : "An unexpected error occurred")
+      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred"
+      setProcessingError(errorMessage)
       setIsProcessing(false)
       setShowProcessingModal(false)
       setShowFailureModal(true)
@@ -677,6 +739,7 @@ export default function HomePage() {
     setResultImage(null)
     setUploadError(null)
     setProcessingError(null)
+    setUploadStatus("idle")
     setViewMode("browse")
   }
 
@@ -690,6 +753,34 @@ export default function HomePage() {
     })
   }
 
+  // Generate dynamic button text based on upload status
+  const getButtonText = () => {
+    if (uploadStatus === "uploading" || isUploading) {
+      return "Uploading Image..."
+    }
+    if (uploadStatus === "failed") {
+      return "Retry Upload"
+    }
+    if (uploadStatus === "success" && selectedImageUrl) {
+      return "Generate My Look"
+    }
+    return "Generate Try-On"
+  }
+
+  const getButtonAction = () => {
+    if (uploadStatus === "failed") {
+      return handleRetryUpload
+    }
+    return handleTryOn
+  }
+
+  const isButtonDisabled = () => {
+    if (isProcessing) return true
+    if (uploadStatus === "uploading" || isUploading) return true
+    if (uploadStatus === "failed") return false // Allow retry
+    return !selectedImageUrl || !selectedWig
+  }
+
   if (wigsLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -697,7 +788,6 @@ export default function HomePage() {
           <div className="animate-spin rounded-full h-20 w-20 border-4 border-gray-900 border-t-transparent mx-auto"></div>
           <div>
             <p className="text-lg font-medium mb-2">Fetching Tokitos Wigs</p>
-            {/* <p className="text-muted-foreground">Getting the latest styles ready for you...</p> */}
           </div>
         </div>
       </div>
@@ -764,7 +854,7 @@ export default function HomePage() {
                 onClick={() => setViewMode("upload")} 
                 className="rounded-xl w-9 h-9 p-0 mr-6 border-none"
               >
-                <History className="h-4 w-4"/> Recents
+                <History className="h-4 w-4"/>
               </Button>
               <Button
                 variant="outline"
@@ -788,16 +878,7 @@ export default function HomePage() {
                 <div className="max-w-2xl mx-auto">
                   <div className="mb-6">
                     <h2 className="text-2xl font-bold mb-2">Choose a wig to try it on</h2>
-                    {/* <p className="text-muted-foreground">
-                      Select a style you love, then upload your photo to see how it looks on you.
-                    </p> */}
                   </div>
-
-                  {/* <div className="mb-6">
-                    <Badge variant="secondary" className="text-sm px-3 py-1 rounded-lg">
-                      {wigs.length} styles available
-                    </Badge>
-                  </div> */}
 
                   {/* Enhanced Wig Carousel with Swipe Support */}
                   <div className="relative mb-6" {...swipeHandlers}>
@@ -911,11 +992,12 @@ export default function HomePage() {
 
                   {hasSelectedImage && (
                     <Badge variant={isShowingResult ? "default" : "secondary"} className="rounded-lg px-3 py-1">
-                      {isShowingResult ? "AI Result" : "Ready"}
+                      {isShowingResult ? "AI Result" : uploadStatus === "success" ? "Ready" : uploadStatus === "failed" ? "Failed" : "Uploading"}
                     </Badge>
                   )}
                 </div>
 
+                {/* Enhanced Upload Error Display */}
                 {uploadError && (
                   <div className="mb-6 p-4 border-none border-destructive bg-destructive/10 rounded-2xl flex items-start gap-3">
                     <AlertCircle className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
@@ -982,6 +1064,8 @@ export default function HomePage() {
                             onClick={() => {
                               setSelectedImage(null)
                               setSelectedImageUrl(null)
+                              setUploadStatus("idle")
+                              setUploadError(null)
                             }}
                             className="w-full border-none rounded-2xl py-4 text-base active:scale-95 transition-transform"
                             size="lg"
@@ -989,18 +1073,23 @@ export default function HomePage() {
                             Change Photo
                           </Button>
                           <Button
-                            onClick={handleTryOn}
-                            disabled={!selectedImageUrl || isProcessing}
+                            onClick={getButtonAction()}
+                            disabled={isButtonDisabled()}
                             className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-2xl py-4 text-base font-semibold shadow-lg active:scale-95 transition-transform disabled:opacity-50"
                             size="lg"
                           >
                             {isProcessing ? (
                               <div className="flex items-center gap-2">
-                                <div className="animate-spin rounded-full h-4 w-4 border-none border-white border-t-transparent"></div>
+                                <Loader2 className="animate-spin h-4 w-4" />
                                 Processing...
                               </div>
+                            ) : isUploading || uploadStatus === "uploading" ? (
+                              <div className="flex items-center gap-2">
+                                <Loader2 className="animate-spin h-4 w-4" />
+                                {getButtonText()}
+                              </div>
                             ) : (
-                              "Generate Try-On"
+                              getButtonText()
                             )}
                           </Button>
                         </div>
@@ -1050,23 +1139,6 @@ export default function HomePage() {
                     {/* Enhanced Upload/Camera Section */}
                     <div className="border-none border-dashed border-border rounded-3xl p-6 bg-gradient-to-br from-gray-50 to-white dark:from-gray-900/50 dark:to-gray-800/50">
                       <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="w-full">
-                        {/* <TabsList className="grid w-full grid-cols-1 mb-6 bg-muted/50 p-1 rounded-2xl">
-                          <TabsTrigger 
-                            value="upload" 
-                            className="flex items-center gap-2 rounded-xl data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                          >
-                            <Upload className="h-4 w-4" />
-                            Upload
-                          </TabsTrigger>
-                          {/* <TabsTrigger 
-                            value="camera" 
-                            className="flex items-center gap-2 rounded-xl data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                          >
-                            <Camera className="h-4 w-4" />
-                            Camera
-                          </TabsTrigger> 
-                        </TabsList> */}
-
                         <TabsContent value="upload" className="text-center space-y-5">
                           <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/20 dark:to-purple-900/20 rounded-2xl flex items-center justify-center mx-auto">
                             <Upload className="h-8 w-8 text-blue-600 dark:text-blue-400" />
