@@ -638,57 +638,109 @@ export default function HomePage() {
     }
   }
 
-  const handleTryOn = async () => {
-    if (!selectedImageUrl || !selectedWig) {
-      setProcessingError("Please select both a wig and upload your photo")
-      setShowFailureModal(true)
-      return
-    }
+  // const handleTryOn = async () => {
+  //   if (!selectedImageUrl || !selectedWig) {
+  //     setProcessingError("Please select both a wig and upload your photo")
+  //     setShowFailureModal(true)
+  //     return
+  //   }
 
-    const selectedWigData = wigs.find((w) => w.id === selectedWig)
-    if (!selectedWigData) {
-      setProcessingError("Selected wig not found")
-      setShowFailureModal(true)
-      return
-    }
+  //   const selectedWigData = wigs.find((w) => w.id === selectedWig)
+  //   if (!selectedWigData) {
+  //     setProcessingError("Selected wig not found")
+  //     setShowFailureModal(true)
+  //     return
+  //   }
 
-    setIsProcessing(true)
-    setShowProcessingModal(true)
-    setProgress(0)
-    setProcessingError(null)
+  //   setIsProcessing(true)
+  //   setShowProcessingModal(true)
+  //   setProgress(0)
+  //   setProcessingError(null)
 
-    try {
-      const result = await performHairstyleSwap(
-        {
-          sourceImageUrl: selectedWigData.imageUrl,
-          targetImageUrl: selectedImageUrl,
-          disableSafetyChecker: false
-        },
-        (progressValue: any) => setProgress(progressValue),
-      )
+  //   try {
+  //     const result = await performHairstyleSwap(
+  //       {
+  //         sourceImageUrl: selectedWigData.imageUrl,
+  //         targetImageUrl: selectedImageUrl,
+  //         disableSafetyChecker: false
+  //       },
+  //       (progressValue: any) => setProgress(progressValue),
+  //     )
 
-      if (result.success && result.resultUrl) {
-        const watermarkedImage = await addWatermarkToImage(result.resultUrl)
-        setResultImage(watermarkedImage)
-        addToRecentGenerations(watermarkedImage)
-        setProgress(100)
-        setViewMode("result")
+  //     if (result.success && result.resultUrl) {
+  //       const watermarkedImage = await addWatermarkToImage(result.resultUrl)
+  //       setResultImage(watermarkedImage)
+  //       addToRecentGenerations(watermarkedImage)
+  //       setProgress(100)
+  //       setViewMode("result")
         
-        setTimeout(() => {
-          setIsProcessing(false)
-          setShowProcessingModal(false)
-        }, 1000)
-      } else {
-        throw new Error(result.error || "Hairstyle processing failed")
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred"
-      setProcessingError(errorMessage)
-      setIsProcessing(false)
-      setShowProcessingModal(false)
-      setShowFailureModal(true)
-    }
+  //       setTimeout(() => {
+  //         setIsProcessing(false)
+  //         setShowProcessingModal(false)
+  //       }, 1000)
+  //     } else {
+  //       throw new Error(result.error || "Hairstyle processing failed")
+  //     }
+  //   } catch (error) {
+  //     const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred"
+  //     setProcessingError(errorMessage)
+  //     setIsProcessing(false)
+  //     setShowProcessingModal(false)
+  //     setShowFailureModal(true)
+  //   }
+  // }
+
+  const handleTryOn = async () => {
+  if (!selectedImageUrl || !selectedWig) {
+    setProcessingError("Please select both a wig and upload your photo")
+    setShowFailureModal(true)
+    return
   }
+
+  const selectedWigData = wigs.find((w) => w.id === selectedWig)
+  if (!selectedWigData) {
+    setProcessingError("Selected wig not found")
+    setShowFailureModal(true)
+    return
+  }
+
+  setIsProcessing(true)
+  setShowProcessingModal(true)
+  setProgress(0)
+  setProcessingError(null)
+
+  try {
+    // FIX: Use the correct parameter names for face swap
+    const result = await performHairstyleSwap(
+      {
+        swapImageUrl: selectedImageUrl,        // User's face photo
+        targetImageUrl: selectedWigData.imageUrl, // Wig image
+      },
+      (progressValue: any) => setProgress(progressValue),
+    )
+
+    if (result.success && result.resultUrl) {
+      const watermarkedImage = await addWatermarkToImage(result.resultUrl)
+      setResultImage(watermarkedImage)
+      addToRecentGenerations(watermarkedImage)
+      setProgress(100)
+      setViewMode("result")
+      
+      setTimeout(() => {
+        setIsProcessing(false)
+        setShowProcessingModal(false)
+      }, 1000)
+    } else {
+      throw new Error(result.error || "Hairstyle processing failed")
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred"
+    setProcessingError(errorMessage)
+    setIsProcessing(false)
+    setShowProcessingModal(false)
+    setShowFailureModal(true)
+  }
+}
 
   const handleDownload = async () => {
     const imageToDownload = resultImage || selectedImage
