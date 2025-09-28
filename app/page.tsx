@@ -36,35 +36,80 @@ import { CameraCapture } from "@/components/camera-capture"
 import { validateImageFile, uploadImageToFreeimage } from "@/lib/image-upload"
 import { performHairstyleSwap } from "@/lib/hair-swap"
 
-// Enhanced Progress Modal with better mobile styling
+// Enhanced Progress Modal with smooth, simulated progress
 const ProgressModal = ({ isOpen, progress, onCancel }: { isOpen: boolean; progress: number; onCancel: () => void }) => {
-  if (!isOpen) return null
+  const [simulatedProgress, setSimulatedProgress] = useState(0)
+  const [currentMessageIndex, setCurrentMessageIndex] = useState(0)
 
   const progressMessages = [
     "Analyzing facial features...",
-    "Processing wig template...",
+    "Processing wig template...", 
     "Applying AI transformation...",
     "Finalizing your new look...",
     "Optimizing results...",
   ]
 
-  const currentMessage = progressMessages[Math.floor((progress / 100) * (progressMessages.length - 1))]
+  // Reset when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setSimulatedProgress(0)
+      setCurrentMessageIndex(0)
+    }
+  }, [isOpen])
+
+  // Simulate smooth progress regardless of actual API progress
+  useEffect(() => {
+    if (!isOpen) return
+
+    const interval = setInterval(() => {
+      setSimulatedProgress(prev => {
+        const newProgress = prev + 0.5 // Very slow increment
+        
+        // Update message based on progress
+        if (newProgress >= 20 && currentMessageIndex < 1) setCurrentMessageIndex(1)
+        if (newProgress >= 40 && currentMessageIndex < 2) setCurrentMessageIndex(2)
+        if (newProgress >= 60 && currentMessageIndex < 3) setCurrentMessageIndex(3)
+        if (newProgress >= 80 && currentMessageIndex < 4) setCurrentMessageIndex(4)
+        
+        // Cap at 95% until actual completion
+        return Math.min(newProgress, 95)
+      })
+    }, 100) // Update every 100ms for smooth animation
+
+    return () => clearInterval(interval)
+  }, [isOpen, currentMessageIndex])
+
+  // When actual progress completes, jump to 100%
+  useEffect(() => {
+    if (progress === 100) {
+      setSimulatedProgress(100)
+      setCurrentMessageIndex(4) // Final message
+    }
+  }, [progress])
+
+  if (!isOpen) return null
+
+  const currentMessage = progressMessages[currentMessageIndex]
 
   return (
     <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-300">
       <div className="bg-background border border-border rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl mx-4">
         <div className="mb-6">
-          <h3 className="text-xl font-bold mb-3">Tokitos AI is working...</h3>
-          <p className="text-sm text-muted-foreground mb-2">{currentMessage}</p>
-          <p className="text-xs text-muted-foreground">Processing time: 20-40 seconds</p>
+          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Wand2 className="h-8 w-8 text-white animate-pulse" />
+          </div>
+          <h3 className="text-xl font-bold mb-3">Creating Your Look...</h3>
+          {/* <p className="text-sm text-muted-foreground mb-2 animate-pulse">{currentMessage}</p> */}
+          <p className="text-xs text-muted-foreground">Processing time: 10-20 seconds</p>
         </div>
 
         <div className="mb-6 space-y-3">
-          <Progress value={progress} className="h-3 bg-muted rounded-full" />
+          {/* Smooth progress bar */}
+          <Progress value={simulatedProgress} className="h-3 bg-muted rounded-full transition-all duration-300 ease-out" />
           <div className="flex justify-between text-xs text-muted-foreground">
-            <span>0%</span>
-            <span className="font-medium">{progress}%</span>
-            <span>100%</span>
+            <span></span>
+            <span className="font-medium">{Math.round(simulatedProgress)}%</span>
+            <span></span>
           </div>
         </div>
 
@@ -80,7 +125,6 @@ const ProgressModal = ({ isOpen, progress, onCancel }: { isOpen: boolean; progre
     </div>
   )
 }
-
 // Enhanced Confirmation Modal for mobile
 const ConfirmationModal = ({
   isOpen,

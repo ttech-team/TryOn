@@ -364,6 +364,9 @@ export async function performFaceSwap(
 
   console.log("Face swap task started:", startResult.taskId)
 
+  // Always start progress at 0
+  if (onProgress) onProgress(0)
+
   // Poll for completion
   return new Promise((resolve) => {
     let pollCount = 0
@@ -378,16 +381,25 @@ export async function performFaceSwap(
         const status = await checkTaskStatus(startResult.taskId!)
         console.log("Current status:", status.status, "Progress:", status.progress)
         
-        if (onProgress && status.progress !== lastProgress) {
-          onProgress(status.progress)
-          lastProgress = status.progress
+        // Only update progress if it's actually increasing
+        // This prevents jumps from 0 to 50% or 100%
+        let displayProgress = status.progress
+        
+        // If progress jumps too much, smooth it out
+        if (status.progress > lastProgress + 20) {
+          displayProgress = lastProgress + 10 // Limit jumps to 10% increments
+        }
+        
+        if (onProgress && displayProgress !== lastProgress) {
+          onProgress(displayProgress)
+          lastProgress = displayProgress
         }
 
         if (status.status === "completed") {
           clearInterval(pollInterval)
           if (status.resultUrl) {
             console.log("Face swap completed successfully with result:", status.resultUrl)
-            if (onProgress) onProgress(100)
+            if (onProgress) onProgress(100) // Ensure we end at 100%
             resolve({
               success: true,
               resultUrl: status.resultUrl,
@@ -395,6 +407,7 @@ export async function performFaceSwap(
               taskId: startResult.taskId,
             })
           } else {
+            if (onProgress) onProgress(100)
             resolve({
               success: false,
               error: status.error || "Processing completed but no result image was generated. Please try again with different photos.",
@@ -404,6 +417,7 @@ export async function performFaceSwap(
         } else if (status.status === "failed") {
           console.log("Face swap failed:", status.error)
           clearInterval(pollInterval)
+          if (onProgress) onProgress(0) // Reset progress on failure
           resolve({
             success: false,
             error: status.error || "Face swap processing failed due to unknown reasons. Please try again.",
@@ -412,6 +426,7 @@ export async function performFaceSwap(
         } else if (pollCount >= maxPolls) {
           console.log("Face swap timed out after maximum polls")
           clearInterval(pollInterval)
+          if (onProgress) onProgress(0) // Reset progress on timeout
           resolve({
             success: false,
             error: "Processing is taking longer than expected. This might be due to server load or image complexity. Please try again in a moment.",
@@ -422,6 +437,7 @@ export async function performFaceSwap(
         console.error("Error during polling:", error)
         if (pollCount >= maxPolls) {
           clearInterval(pollInterval)
+          if (onProgress) onProgress(0) // Reset progress on error
           resolve({
             success: false,
             error: "Unable to complete processing due to connection issues. Please check your internet and try again.",
